@@ -90,8 +90,15 @@ namespace CreateBeamWithHoles
 
         }
 
+        /// <summary>
+        /// 创建相同孔径的梁截面
+        /// </summary>
+        /// <param name="row">孔的排数</param>
+        /// <param name="column">孔的列数</param>
+        /// <param name="radius">孔径大小</param>
         public void CreateIdenticalHolesBeam(int row, int column, Radius radius)
         {
+            //计算梁的长度及宽度
             double width, depth,diameter;
             double interval, lr_edge, intv_h, top, bottom;
             if (radius == Radius.small)
@@ -106,10 +113,10 @@ namespace CreateBeamWithHoles
             width = interval*(column-1)+2*lr_edge;
             depth = intv_h*(row-1)+top+bottom;
 
-            //ReferencePlane plane = findElement(doc, typeof(ReferencePlane), "中心(左/右)") as ReferencePlane;
             SketchPlane Splane = SketchPlane.Create(doc,new Plane(XYZ.BasisY,XYZ.BasisZ,XYZ.Zero));
             CurveArrArray caa = new CurveArrArray();
 
+            //绘制梁的外轮廓
             XYZ p0 = new XYZ(0,mmToFeet(-width/2),0);
             XYZ p1 = new XYZ(0,mmToFeet(width/2),0);
             XYZ p2 = new XYZ(0,mmToFeet(width/2),mmToFeet(depth));
@@ -128,6 +135,7 @@ namespace CreateBeamWithHoles
 
             caa.Append(curveArr1);
 
+            //绘制孔的轮廓
             for (int i = 0; i < row; i++)
             {
                 for (int j = 0; j < column; j++) {
@@ -140,17 +148,26 @@ namespace CreateBeamWithHoles
                 }
             }
 
+            //生成梁拉伸体，并移动至中心位置
             Extrusion beam = m_familyCreator.NewExtrusion(true, caa, Splane, mmToFeet(3000));
             ElementTransformUtils.MoveElement(doc, beam.Id, new XYZ(-mmToFeet(3000)/2,0,0));
+
+            //将梁边界与参照边界对齐
             AddAlignment(beam, new XYZ(-1, 0, 0), "左");
             AddAlignment(beam, new XYZ(1, 0, 0), "右");
 
         }
 
+        /// <summary>
+        /// 绘制多孔径梁
+        /// </summary>
+        /// <param name="beamInfo">储存每排孔径信息的集合，顺序从上到下</param>
         public void CreateDifferentSizeHolesBeam(List<unitRow> beamInfo ) {
             List<double> depthList = new List<double>();
             int maxWidthRowIndex;
             double width = 0, depth = 0;
+
+            //计算梁截面的长度、宽度
             for (int i = 0; i < beamInfo.Count; i++)
             {
                 double temp;
@@ -192,6 +209,7 @@ namespace CreateBeamWithHoles
                 depthList.Add(depth);
             }
 
+            //修正depthList最后一个值
             if (beamInfo[beamInfo.Count - 1].radius == Radius.small)
                 depthList[depthList.Count - 1] -= BOTTOM_S;
             else
@@ -200,6 +218,7 @@ namespace CreateBeamWithHoles
             SketchPlane Splane = SketchPlane.Create(doc, new Plane(XYZ.BasisY, XYZ.BasisZ, XYZ.Zero));
             CurveArrArray caa = new CurveArrArray();
 
+            //绘制梁的外轮廓
             XYZ p0 = new XYZ(0, mmToFeet(-width / 2), 0);
             XYZ p1 = new XYZ(0, mmToFeet(width / 2), 0);
             XYZ p2 = new XYZ(0, mmToFeet(width / 2), mmToFeet(depth));
@@ -218,6 +237,7 @@ namespace CreateBeamWithHoles
 
             caa.Append(curveArr1);
 
+            //绘制各孔径轮廓
             for (int i = 0; i < beamInfo.Count; i++)
             {
                 double lr_edge,interval,diameter;
@@ -244,11 +264,18 @@ namespace CreateBeamWithHoles
                 }
             }
 
+            //生成梁拉伸体
             Extrusion beam = m_familyCreator.NewExtrusion(true, caa, Splane, mmToFeet(3000));
             ElementTransformUtils.MoveElement(doc, beam.Id, new XYZ(-mmToFeet(3000) / 2, 0, 0));
-
+            
+            //将梁边界与参照边界对齐
+            AddAlignment(beam, new XYZ(-1, 0, 0), "左");
+            AddAlignment(beam, new XYZ(1, 0, 0), "右");
         }
 
+        #region Helper Functions
+
+        //添加对齐
         public void AddAlignment(Extrusion solid, XYZ normal, string nameRefPlane)
         {
             View pViewPlan = findElement(doc,typeof(View),"前") as View;
@@ -286,6 +313,7 @@ namespace CreateBeamWithHoles
             return mmVal / 304.8;
         }
 
+        //在拉伸体上找到相应的面
         PlanarFace findFace(Extrusion pBox, XYZ normal, ReferencePlane refPlane)
         {
             // get the geometry object of the given element
@@ -329,5 +357,7 @@ namespace CreateBeamWithHoles
             // if we come here, we did not find any.
             return null;
         }
+
+        #endregion
     }
 }
