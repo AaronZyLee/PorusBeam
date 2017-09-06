@@ -1,0 +1,7 @@
+c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.csprojResolveAssemblyReference.cache
+c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.Form1.resources
+c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.csproj.GenerateResource.Cache
+c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\bin\Debug\CreateBeamWithHoles.dll
+c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\bin\Debug\CreateBeamWithHoles.pdb
+c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.dll
+c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.pdb
