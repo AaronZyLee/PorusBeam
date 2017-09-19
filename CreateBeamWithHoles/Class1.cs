@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using System.IO;
 
 namespace CreateBeamWithHoles
 {
@@ -359,5 +360,95 @@ namespace CreateBeamWithHoles
         }
 
         #endregion
+    }
+
+    [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
+    public class AssemblePoleSection : IExternalCommand
+    {
+        Autodesk.Revit.Creation.FamilyItemFactory m_familyCreator;
+        Document doc;
+        FileStream dataFile;
+        StreamReader sr;
+
+
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIApplication app = commandData.Application;
+            doc = app.ActiveUIDocument.Document;
+            m_familyCreator = doc.FamilyCreate;
+            Form2 form2 = new Form2();
+            if (form2.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            {
+                dataFile = new FileStream(form2.fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                sr = new StreamReader(dataFile, System.Text.Encoding.GetEncoding(936));
+
+                FamilySymbol fs = getSymbolType(doc, "电线杆");
+                if (fs != null)
+                {
+                    TaskDialog.Show("1", "ok!");
+                    Transaction trans = new Transaction(doc);
+                    trans.Start("创建电塔杆");
+                    CreateColumn(fs);
+                    trans.Commit();
+                    return Result.Succeeded;
+
+                }
+                else
+                    return Result.Failed;
+            }
+            return Result.Failed;
+            //throw new NotImplementedException();
+        }
+
+        public void CreateColumn(FamilySymbol fs)
+        {
+            string str = sr.ReadLine();
+            while (str != null)
+            {
+                str = sr.ReadLine();
+                if (str == null)
+                    break;
+                string[] data = str.Split(',');
+                FamilyInstance column = m_familyCreator.NewFamilyInstance(new XYZ(0,0,mmToFeet(Double.Parse(data[3])*1000)),fs,Autodesk.Revit.DB.Structure.StructuralType.Column);
+                column.LookupParameter("顶面半径").Set(mmToFeet(Double.Parse(data[0]))/2.0);
+                column.LookupParameter("底面半径").Set(mmToFeet(Double.Parse(data[1]))/2.0);
+                column.LookupParameter("壁厚").Set(mmToFeet(Double.Parse(data[2])));
+                column.LookupParameter("高度").Set(mmToFeet(Double.Parse(data[4])*1000));
+            } 
+            sr.Close();
+        }
+
+        /// <summary>
+        /// 根据名称查找familysymbol
+        /// </summary>
+        /// <param name="doc">项目文件</param>
+        /// <param name="name">symbol名称</param>
+        /// <returns>familysymbol</returns>
+        public FamilySymbol getSymbolType(Document doc, string name)
+        {
+            FilteredElementIdIterator workWellItrator = new FilteredElementCollector(doc).OfClass(typeof(Family)).GetElementIdIterator();
+            workWellItrator.Reset();
+            FamilySymbol getsymbol = null;
+            while (workWellItrator.MoveNext())
+            {
+                Family family = doc.GetElement(workWellItrator.Current) as Family;
+                foreach (ElementId id in family.GetFamilySymbolIds())
+                {
+                    FamilySymbol symbol = doc.GetElement(id) as FamilySymbol;
+                    if (symbol.Name == name)
+                    {
+                        getsymbol = symbol;
+                    }
+                }
+            }
+            return getsymbol;
+
+        }
+
+        //毫米英尺单位转化
+        double mmToFeet(double mmVal)
+        {
+            return mmVal / 304.8;
+        }
     }
 }

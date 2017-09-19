@@ -5,3 +5,4 @@ c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBe
 c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\bin\Debug\CreateBeamWithHoles.pdb
 c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.dll
 c:\users\dell\documents\visual studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.pdb
+C:\Users\DELL\Documents\Visual Studio 2012\Projects\CreateBeamWithHoles\CreateBeamWithHoles\obj\Debug\CreateBeamWithHoles.Form2.resources
