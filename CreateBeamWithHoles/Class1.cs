@@ -382,7 +382,7 @@ namespace CreateBeamWithHoles
                 dataFile = new FileStream(form2.fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 sr = new StreamReader(dataFile, System.Text.Encoding.GetEncoding(936));
 
-                FamilySymbol fs = getSymbolType(doc, "电线杆");
+                FamilySymbol fs = getSymbolType(doc, "电塔杆组件");
                 if (fs != null)
                 {
                     TaskDialog.Show("1", "ok!");
@@ -409,9 +409,9 @@ namespace CreateBeamWithHoles
                 if (str == null)
                     break;
                 string[] data = str.Split(',');
-                FamilyInstance column = m_familyCreator.NewFamilyInstance(new XYZ(0,0,mmToFeet(Double.Parse(data[3])*1000)),fs,Autodesk.Revit.DB.Structure.StructuralType.Column);
-                column.LookupParameter("顶面半径").Set(mmToFeet(Double.Parse(data[0]))/2.0);
-                column.LookupParameter("底面半径").Set(mmToFeet(Double.Parse(data[1]))/2.0);
+                FamilyInstance column = m_familyCreator.NewFamilyInstance(new XYZ(0,0,mmToFeet(Double.Parse(data[3])*1000)),fs,Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+                column.LookupParameter("顶面直径").Set(mmToFeet(Double.Parse(data[0])));
+                column.LookupParameter("底面直径").Set(mmToFeet(Double.Parse(data[1])));
                 column.LookupParameter("壁厚").Set(mmToFeet(Double.Parse(data[2])));
                 column.LookupParameter("高度").Set(mmToFeet(Double.Parse(data[4])*1000));
             } 
