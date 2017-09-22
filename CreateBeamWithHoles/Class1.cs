@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace CreateBeamWithHoles
 {
@@ -369,36 +370,131 @@ namespace CreateBeamWithHoles
         Document doc;
         FileStream dataFile;
         StreamReader sr;
+        String fileName1, fileName2, fileName3;
+        Dictionary<int, XYZ> pointInfo;
+        Dictionary<int, IList<double>> elementInfo;
 
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             UIApplication app = commandData.Application;
             doc = app.ActiveUIDocument.Document;
-            m_familyCreator = doc.FamilyCreate;
+            //m_familyCreator = doc.FamilyCreate;
             Form2 form2 = new Form2();
             if (form2.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
-                dataFile = new FileStream(form2.fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                sr = new StreamReader(dataFile, System.Text.Encoding.GetEncoding(936));
+                fileName1 = form2.fileName1;
+                fileName2 = form2.fileName2;
+                fileName3 = form2.fileName3;
+                if (insertDataset()) {
+                    dataFile = new FileStream(fileName2, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    sr = new StreamReader(dataFile, System.Text.Encoding.GetEncoding(936));
+                    //insertDataset();
+                    //FamilySymbol fs = getSymbolType(doc, "电塔杆组件");
+                    //FamilySymbol fs = getSymbolType(doc, "族1");
+                    FamilySymbol fs = getSymbolType(doc, "电塔杆单元");
 
-                FamilySymbol fs = getSymbolType(doc, "电塔杆组件");
-                if (fs != null)
-                {
-                    TaskDialog.Show("1", "ok!");
-                    Transaction trans = new Transaction(doc);
-                    trans.Start("创建电塔杆");
-                    CreateColumn(fs);
-                    trans.Commit();
-                    return Result.Succeeded;
+                    if (fs != null)
+                    {
+                        TaskDialog.Show("1", "ok!");
+                        Transaction trans = new Transaction(doc);
+                        trans.Start("创建电塔杆");
+                        fs.Activate();
+                        CreateColumn1(fs);
+                        trans.Commit();
+                        return Result.Succeeded;
 
-                }
-                else
-                    return Result.Failed;
+                    }
+                    else
+                        return Result.Failed;
+                }         
             }
             return Result.Failed;
             //throw new NotImplementedException();
         }
+
+        /// <summary>
+        /// 初始化数据
+        /// </summary>
+        /// <returns></returns>
+        public bool insertDataset()
+        {
+            //Form2 form2 = new Form2();
+            //if (form2.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            if(fileName1!=null&&fileName3!=null)
+            {   
+                //导入点的信息
+                FileStream dataFile1 = new FileStream(fileName1, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                StreamReader sr1 = new StreamReader(dataFile1, System.Text.Encoding.GetEncoding(936));
+                pointInfo = new Dictionary<int, XYZ>();
+                string str = sr1.ReadLine();
+                while (str != null)
+                {
+                    str = sr1.ReadLine();
+                    if (str == null)
+                        break;
+                    //string[] data = str.Split(',');
+                    string[] data = Regex.Split(str, @"\s+");
+                    pointInfo.Add(int.Parse(data[1]), new XYZ(mToFeet(double.Parse(data[2])), mToFeet(double.Parse(data[3])), -mToFeet(double.Parse(data[4]))));
+                }
+                sr1.Close();
+
+                //导入杆件信息
+                FileStream dataFile2 = new FileStream(fileName3, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                StreamReader sr2 = new StreamReader(dataFile2, System.Text.Encoding.GetEncoding(936));
+                elementInfo = new Dictionary<int,IList<double>>();
+                str = sr2.ReadLine();
+                while (str != null)
+                {
+                    str = sr2.ReadLine();
+                    if (str == null)
+                        break;
+                    //string[] data = str.Split(',');
+                    string[] data = Regex.Split(str, @"\s+");
+                    IList<double> paramInfo = new List<double>();
+                    paramInfo.Add(double.Parse(data[2]));paramInfo.Add(double.Parse(data[3]));paramInfo.Add(double.Parse(data[4]));
+                    elementInfo.Add(int.Parse(data[1]), paramInfo);
+                }
+                sr2.Close();
+
+                return true;
+            }
+            return false;
+        }
+
+        public void CreateColumn1(FamilySymbol fs)
+        {
+            Level level = findElement(doc, typeof(Level), "标高 1") as Level;
+            if (level == null)
+            {
+                TaskDialog.Show("1", "error");
+                return;
+            }
+
+            string str = sr.ReadLine();
+            while (str != null)
+            {
+                str = sr.ReadLine();
+                if (str == null)
+                    break;
+                string[] data = Regex.Split(str, @"\s+");
+                int startpoint = int.Parse(data[2]);
+                int endpoint = int.Parse(data[3]);
+                int param = int.Parse(data[4]);
+                Curve line = Line.CreateBound(pointInfo[startpoint], pointInfo[endpoint]);
+                FamilyInstance column = doc.Create.NewFamilyInstance(line, fs, level, Autodesk.Revit.DB.Structure.StructuralType.Beam);
+                column.get_Parameter(BuiltInParameter.Z_JUSTIFICATION).Set(2);
+                column.LookupParameter("顶面直径").Set(mmToFeet(elementInfo[param][0]));
+                column.LookupParameter("底面直径").Set(mmToFeet(elementInfo[param][1]));
+                column.LookupParameter("壁厚").Set(mmToFeet(elementInfo[param][2]));
+            }
+            //Curve line = Line.CreateBound(new XYZ(0, 0, 0), new XYZ(0, 0, 1000));
+
+            //if (fi == null)
+            //    TaskDialog.Show("1", "failed");
+
+        }
+
 
         public void CreateColumn(FamilySymbol fs)
         {
@@ -449,6 +545,38 @@ namespace CreateBeamWithHoles
         double mmToFeet(double mmVal)
         {
             return mmVal / 304.8;
+        }
+
+        /// <summary>
+        /// 米英尺单位转化
+        /// </summary>
+        /// <param name="mVal"></param>
+        /// <returns></returns>
+        double mToFeet(double mVal)
+        {
+            return mVal * 1000 / 304.8;
+        }
+
+        Element findElement(Document doc, Type targetType, string targetName)
+        {
+            // get the elements of the given type
+            //
+            FilteredElementCollector collector = new FilteredElementCollector(doc);
+            collector.WherePasses(new ElementClassFilter(targetType));
+
+            // parse the collection for the given name
+            // using LINQ query here. 
+            // 
+            var targetElems = from element in collector where element.Name.Equals(targetName) select element;
+            List<Element> elems = targetElems.ToList<Element>();
+
+            if (elems.Count > 0)
+            {  // we should have only one with the given name. 
+                return elems[0];
+            }
+
+            // cannot find it.
+            return null;
         }
     }
 }
