@@ -495,6 +495,11 @@ namespace CreateBeamWithHoles
 
         }
 
+        public void CreateColumn2(FamilySymbol fs)
+        {
+
+        }
+
 
         public void CreateColumn(FamilySymbol fs)
         {
@@ -578,5 +583,436 @@ namespace CreateBeamWithHoles
             // cannot find it.
             return null;
         }
+    }
+
+    [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
+    public class AssemblePoleSectionInFamily : IExternalCommand
+    {
+        Autodesk.Revit.Creation.FamilyItemFactory m_familyCreator;
+        Document doc;
+
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIApplication app = commandData.Application;
+            doc = app.ActiveUIDocument.Document;
+            m_familyCreator = doc.FamilyCreate;            
+            //FamilySymbol fs = getSymbolType(doc, "电塔杆单元");
+            //if (fs != null)
+            //{
+            //    TaskDialog.Show("1", "ok!");
+            //    Transaction trans = new Transaction(doc);
+            //    trans.Start("创建电塔杆");
+            //    fs.Activate();
+            //    Line pl = Line.CreateBound(XYZ.Zero, new XYZ(0, 0, 100));
+            //    m_familyCreator.NewFamilyInstance(pl, fs, view); 
+            //    //CreateColumn1(fs);
+            //    trans.Commit();
+            //    return Result.Succeeded;
+            //}
+
+            Plane p = new Plane(new XYZ(3,4,5),new XYZ(1,2,3));
+
+            //Transform transform = Transform.CreateReflection(p);
+            //transform.BasisX = p.XVec;
+            //transform.BasisY = p.YVec;
+            //transform.BasisZ = p.Normal;
+            //transform.Origin = p.Origin;
+            Transaction trans = new Transaction(doc);
+            trans.Start("创建拉伸");
+
+            //CreatePoleSection(transform,p);
+            //CreateLShapeSection(p, 400, 40);
+            //CreateLoopSection(p, 400, 300);
+            CreateNPolygonSection(p, 400, 16);
+            trans.Commit();
+            return Result.Succeeded;
+        }
+
+        public void CreatePoleSection(Transform transform, Plane p) 
+        {
+
+            SketchPlane Splane = SketchPlane.Create(doc, p);
+            CurveArrArray caa = new CurveArrArray();
+
+            double height = mmToFeet(200);
+            double width = mmToFeet(400);
+            XYZ p0 = transform.OfPoint(new XYZ(-width / 2, height / 2, 0));
+            XYZ p1 = transform.OfPoint(new XYZ(width / 2, height / 2, 0));
+            XYZ p2 = transform.OfPoint(new XYZ(width / 2, -height / 2, 0));
+            XYZ p3 = transform.OfPoint(new XYZ(-width / 2, -height / 2, 0));
+
+            Line l1 = Line.CreateBound(p0, p1);
+            Line l2 = Line.CreateBound(p1, p2);
+            Line l3 = Line.CreateBound(p2, p3);
+            Line l4 = Line.CreateBound(p3, p0);
+
+            //ModelCurve cl1 = m_familyCreator.NewModelCurve(l1, Splane);
+
+            CurveArray curveArr1 = new CurveArray();
+            curveArr1.Append(l1);
+            curveArr1.Append(l2);
+            curveArr1.Append(l3);
+            curveArr1.Append(l4);
+
+            caa.Append(curveArr1);
+
+            Extrusion beam = m_familyCreator.NewExtrusion(true, caa, Splane, mmToFeet(3000));
+        }
+
+        /// <summary>
+        /// 创建等边L型截面
+        /// </summary>
+        /// <param name="p">创建截面所在的平面</param>
+        /// <param name="width">L型截面边长</param>
+        /// <param name="thick">厚度</param>
+        /// <returns></returns>
+        public CurveArrArray CreateLShapeSection(Plane p, double width, double thick)
+        {
+            CurveArrArray caa = new CurveArrArray();
+            width = mmToFeet(width);
+            thick = mmToFeet(thick);
+
+            Transform transform = Transform.CreateReflection(p);
+            transform.BasisX = p.XVec;
+            transform.BasisY = p.YVec;
+            transform.BasisZ = p.Normal;
+            transform.Origin = p.Origin;
+
+            XYZ p0 = transform.OfPoint(XYZ.Zero);
+            XYZ p1 = transform.OfPoint(new XYZ(0,width,0));
+            XYZ p2 = transform.OfPoint(new XYZ(thick,width,0));
+            XYZ p3 = transform.OfPoint(new XYZ(thick,thick,0));
+            XYZ p4 = transform.OfPoint(new XYZ(width, thick, 0));
+            XYZ p5 = transform.OfPoint(new XYZ(width, 0, 0));
+
+            Line l1 = Line.CreateBound(p0, p1);
+            Line l2 = Line.CreateBound(p1, p2);
+            Line l3 = Line.CreateBound(p2, p3);
+            Line l4 = Line.CreateBound(p3, p4);
+            Line l5 = Line.CreateBound(p4, p5);
+            Line l6 = Line.CreateBound(p5, p0);
+
+            CurveArray curveArr1 = new CurveArray();
+            curveArr1.Append(l1);
+            curveArr1.Append(l2);
+            curveArr1.Append(l3);
+            curveArr1.Append(l4);
+            curveArr1.Append(l5);
+            curveArr1.Append(l6);
+
+            m_familyCreator.NewModelCurveArray(curveArr1, SketchPlane.Create(doc, p));
+
+            caa.Append(curveArr1);
+
+            return caa;
+        } 
+
+        /// <summary>
+        /// 创建环形截面
+        /// </summary>
+        /// <param name="p">创建截面所在的平面</param>
+        /// <param name="r_out">外径</param>
+        /// <param name="r_in">内径</param>
+        /// <returns></returns>
+        public CurveArrArray CreateLoopSection(Plane p, double r_out, double r_in)
+        {
+            CurveArrArray caa = new CurveArrArray();
+            r_out = mmToFeet(r_out);
+            r_in = mmToFeet(r_in);
+
+            Arc outcircle = Arc.Create(p, r_out, 0, 2 * Math.PI);
+            Arc incircle = Arc.Create(p, r_in, 0, 2 * Math.PI);
+
+            CurveArray curveArr1 = new CurveArray();
+            curveArr1.Append(outcircle);
+            curveArr1.Append(incircle);
+
+            m_familyCreator.NewModelCurveArray(curveArr1, SketchPlane.Create(doc, p));
+
+            caa.Append(curveArr1);
+
+            return caa;
+        }
+
+        /// <summary>
+        /// 创建正N边型截面，第一点落在y轴上
+        /// </summary>
+        /// <param name="p">创建截面所在的平面</param>
+        /// <param name="r">外接圆半径</param>
+        /// <param name="n">边数(n>=3)</param>
+        /// <returns></returns>
+        public CurveArrArray CreateNPolygonSection(Plane p, double r, int n)
+        {
+            if (n < 3)
+                return null;
+
+            CurveArrArray caa = new CurveArrArray();
+            r = mmToFeet(r);
+            CurveArray curveArr1 = new CurveArray();
+
+            Transform transform = Transform.CreateReflection(p);
+            transform.BasisX = p.XVec;
+            transform.BasisY = p.YVec;
+            transform.BasisZ = p.Normal;
+            transform.Origin = p.Origin;
+
+            for (int i = 0; i < n; i++)
+            {
+                Line l = Line.CreateBound(transform.OfPoint(new XYZ(Math.Cos(i*2*Math.PI/n),Math.Sin(i*2*Math.PI/n),0)),
+                                            transform.OfPoint(new XYZ(Math.Cos((i+1)*2*Math.PI/n),Math.Sin((i+1)*2*Math.PI/n),0)));
+                curveArr1.Append(l);
+            }
+
+            m_familyCreator.NewModelCurveArray(curveArr1, SketchPlane.Create(doc, p));
+
+            caa.Append(curveArr1);
+            return caa;
+        }
+
+        public static CurveArray CreateNPolygonSection1(Plane p, double r, int n)
+        {
+            if (n < 3)
+                return null;
+            r = Utils.mmToFeet(r);
+            CurveArray curveArr1 = new CurveArray();
+
+            Transform transform = Transform.CreateReflection(p);
+            transform.BasisX = p.XVec;
+            transform.BasisY = p.YVec;
+            transform.BasisZ = p.Normal;
+            transform.Origin = p.Origin;
+
+            for (int i = 0; i < n; i++)
+            {
+                Line l = Line.CreateBound(transform.OfPoint(new XYZ(r*Math.Cos(i * 2 * Math.PI / n), r*Math.Sin(i * 2 * Math.PI / n), 0)),
+                                            transform.OfPoint(new XYZ(r*Math.Cos((i + 1) * 2 * Math.PI / n), r*Math.Sin((i + 1) * 2 * Math.PI / n), 0)));
+                curveArr1.Append(l);
+            }
+
+            return curveArr1;
+        }
+
+        
+
+        double mmToFeet(double mmVal)
+        {
+            return mmVal / 304.8;
+        }
+
+        /// <summary>
+        /// 根据名称查找familysymbol
+        /// </summary>
+        /// <param name="doc">项目文件</param>
+        /// <param name="name">symbol名称</param>
+        /// <returns>familysymbol</returns>
+        public FamilySymbol getSymbolType(Document doc, string name)
+        {
+            FilteredElementIdIterator workWellItrator = new FilteredElementCollector(doc).OfClass(typeof(Family)).GetElementIdIterator();
+            workWellItrator.Reset();
+            FamilySymbol getsymbol = null;
+            while (workWellItrator.MoveNext())
+            {
+                Family family = doc.GetElement(workWellItrator.Current) as Family;
+                foreach (ElementId id in family.GetFamilySymbolIds())
+                {
+                    FamilySymbol symbol = doc.GetElement(id) as FamilySymbol;
+                    if (symbol.Name == name)
+                    {
+                        getsymbol = symbol;
+                    }
+                }
+            }
+            return getsymbol;
+
+        }
+
+        Element findElement(Document doc, Type targetType, string targetName)
+        {
+            // get the elements of the given type
+            //
+            FilteredElementCollector collector = new FilteredElementCollector(doc);
+            collector.WherePasses(new ElementClassFilter(targetType));
+
+            // parse the collection for the given name
+            // using LINQ query here. 
+            // 
+            var targetElems = from element in collector where element.Name.Equals(targetName) select element;
+            List<Element> elems = targetElems.ToList<Element>();
+
+            if (elems.Count > 0)
+            {  // we should have only one with the given name. 
+                return elems[0];
+            }
+
+            // cannot find it.
+            return null;
+        }
+    }
+
+    [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
+    public class CreateVoidCut : IExternalCommand
+    {
+        Autodesk.Revit.Creation.FamilyItemFactory m_familyCreator;
+        Document doc;
+
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIApplication app = commandData.Application;
+            doc = app.ActiveUIDocument.Document;
+            m_familyCreator = doc.FamilyCreate;
+
+            //Blend blend = Utils.findElement(doc, typeof(Blend), "融合") as Blend;
+            //Blend vaccum = Utils.findElement(doc, typeof(Blend), "空心 融合") as Blend;
+            //TaskDialog.Show("1", SolidSolidCutUtils.IsAllowedForSolidCut(blend).ToString());
+            //TaskDialog.Show("2", blend.Id.ToString());
+            //TaskDialog.Show("1", InstanceVoidCutUtils.CanBeCutWithVoid(blend).ToString());
+            //TaskDialog.Show("1", SolidSolidCutUtils.IsAllowedForSolidCut(blend).ToString());
+             
+
+            Transaction trans = new Transaction(doc);
+            trans.Start("创建空心融合");
+            Plane p1 = new Plane(XYZ.BasisZ, new XYZ(0, 0, 0));
+            Plane p2 = new Plane(XYZ.BasisZ, new XYZ(0, 0, Utils.mmToFeet(1000)));
+            m_familyCreator.NewBlend(true, AssemblePoleSectionInFamily.CreateNPolygonSection1(p2, 100, 16), AssemblePoleSectionInFamily.CreateNPolygonSection1(p1, 200, 16), SketchPlane.Create(doc, p1));
+            m_familyCreator.NewBlend(false, AssemblePoleSectionInFamily.CreateNPolygonSection1(p2, 80, 16), AssemblePoleSectionInFamily.CreateNPolygonSection1(p1, 180, 16), SketchPlane.Create(doc, p1));
+            //InstanceVoidCutUtils.AddInstanceVoidCut(doc, blend, vaccum);
+            //SolidSolidCutUtils.AddCutBetweenSolids(doc, blend, vaccum);
+            trans.Commit();
+
+            return Result.Succeeded;
+        }
+    }
+
+    [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
+    public class FindPoints : IExternalCommand
+    {
+        Document doc;
+        Document f_doc;
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIApplication app = commandData.Application;
+            doc = app.ActiveUIDocument.Document;
+
+            //找到排管的族文件
+            FilteredElementCollector collector = new FilteredElementCollector(doc);
+            if (collector != null)
+                collector.OfClass(typeof(Family));
+            IList<Element> list = collector.ToElements();
+            foreach (Element f in list)
+            {
+                Family family = f as Family;
+                if (family.Name == "排管0")
+                {
+                    f_doc = doc.EditFamily(family);
+                    break;
+                }
+            }
+
+            //找到排管的起点方向startDir
+            String coordinate;
+            XYZ startDir;
+            FamilyInstance fi = Utils.findElement(doc,typeof(FamilyInstance),"排管0") as FamilyInstance;
+            coordinate=  fi.LookupParameter("起点方向").AsString();
+            TaskDialog.Show("1", coordinate);
+            startDir = Utils.stringToXYZ(coordinate);   
+
+            //在族文件中找到参照点
+            FilteredElementCollector collector1 = new FilteredElementCollector(f_doc);
+            if (collector1 != null)
+                collector1.OfClass(typeof(ReferencePoint));
+            IList<Element> list1 = collector1.ToElements();
+
+            //将参照点转化为xyz坐标
+            List<XYZ> points = new List<XYZ>();
+            for (int i = 0; i < list1.Count; i++)
+            {
+                points.Add(((ReferencePoint)list1[i]).Position);
+            }
+
+            //在项目文件中绘制电缆
+            CableClimb.CableClimb cc = new CableClimb.CableClimb();
+            Transaction trans = new Transaction(doc);
+            trans.Start("创建电缆");
+            cc.CreateFlexDuct(doc, points, 30, startDir, XYZ.BasisX);
+            trans.Commit();
+
+            return Result.Succeeded;
+        }
+    }
+
+    public class Utils
+    {
+        public static double mmToFeet(double mmVal)
+        {
+            return mmVal / 304.8;
+        }
+
+        /// <summary>
+        /// 根据名称查找familysymbol
+        /// </summary>
+        /// <param name="doc">项目文件</param>
+        /// <param name="name">symbol名称</param>
+        /// <returns>familysymbol</returns>
+        public static FamilySymbol getSymbolType(Document doc, string name)
+        {
+            FilteredElementIdIterator workWellItrator = new FilteredElementCollector(doc).OfClass(typeof(Family)).GetElementIdIterator();
+            workWellItrator.Reset();
+            FamilySymbol getsymbol = null;
+            while (workWellItrator.MoveNext())
+            {
+                Family family = doc.GetElement(workWellItrator.Current) as Family;
+                foreach (ElementId id in family.GetFamilySymbolIds())
+                {
+                    FamilySymbol symbol = doc.GetElement(id) as FamilySymbol;
+                    if (symbol.Name == name)
+                    {
+                        getsymbol = symbol;
+                    }
+                }
+            }
+            return getsymbol;
+
+        }
+
+        public static Element findElement(Document doc, Type targetType, string targetName)
+        {
+            // get the elements of the given type
+            //
+            FilteredElementCollector collector = new FilteredElementCollector(doc);
+            collector.WherePasses(new ElementClassFilter(targetType));
+
+            // parse the collection for the given name
+            // using LINQ query here. 
+            // 
+            var targetElems = from element in collector where element.Name.Equals(targetName) select element;
+            List<Element> elems = targetElems.ToList<Element>();
+
+            if (elems.Count > 0)
+            {  // we should have only one with the given name. 
+                return elems[0];
+            }
+
+            // cannot find it.
+            return null;
+        }
+
+        public static string getVaule(FamilyInstance fi, string para)
+        {
+            IList<Parameter> list = fi.GetParameters(para);
+            string result = "";
+            if (list.Count > 0)
+                result = list[0].AsValueString();
+            return result;
+        }
+
+        public static XYZ stringToXYZ(string s)
+        {
+            s = s.Substring(1, s.Length - 2);
+            string[] coordinate = s.Split(',');
+            if(coordinate.Length == 3)
+                return new XYZ(Double.Parse(coordinate[0]), Double.Parse(coordinate[1]), Double.Parse(coordinate[2]));
+            return null;
+        }
+
     }
 }

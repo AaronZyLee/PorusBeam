@@ -30,6 +30,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="CableClimb">
+      <HintPath>..\..\..\..\..\Desktop\CableClimb\CableClimb\bin\Debug\CableClimb.dll</HintPath>
+    </Reference>
     <Reference Include="RevitAPI">
       <HintPath>..\..\..\..\..\..\..\revit2016\Revit 2016\RevitAPI.dll</HintPath>
       <Private>False</Private>
