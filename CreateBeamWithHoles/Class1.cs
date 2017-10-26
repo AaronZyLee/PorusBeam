@@ -884,6 +884,179 @@ namespace CreateBeamWithHoles
     }
 
     [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
+    public class MergeCurve : IExternalCommand
+    {
+        Document doc;
+        Reference firstline;       
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIApplication app = commandData.Application;
+            doc = app.ActiveUIDocument.Document;
+            Autodesk.Revit.UI.Selection.Selection sel = app.ActiveUIDocument.Selection;
+            firstline = sel.PickObject(Autodesk.Revit.UI.Selection.ObjectType.Element, "请选择起点的曲线");
+            IList<Reference> fi_list = sel.PickObjects(Autodesk.Revit.UI.Selection.ObjectType.Element, "请选择其他待连接的曲线");
+
+            //将曲线进行排序
+            fi_list = SortLine(fi_list);
+
+            //提取曲线上的点
+            List<XYZ> points = new List<XYZ>();
+            for (int i = 0; i < fi_list.Count; i++)
+            {
+                FamilyInstance fi = doc.GetElement(fi_list[i]) as FamilyInstance;
+                List<XYZ> temp = FindControlPoints(doc, fi.Symbol.Family);
+                if (i !=0 )
+                {   
+                    //判断起点终点是否倒置
+                    if (temp[0].DistanceTo(points[points.Count - 1]) > temp[temp.Count - 1].DistanceTo(points[points.Count - 1]))
+                        temp.Reverse();
+                    //判断起点与上一条线的终点是否重合
+                    if (temp[0].IsAlmostEqualTo(points[points.Count - 1]))
+                        points.AddRange(temp.GetRange(1, temp.Count - 1));
+                    else
+                        points.AddRange(temp);
+                    continue;
+                }
+                points.AddRange(temp);
+            }
+
+            //绘制曲线
+            Transaction trans = new Transaction(doc, "tt");
+            trans.Start();
+            Document massdoc = doc.Application.NewFamilyDocument(@"C:\ProgramData\Autodesk\RVT 2016\Family Templates\Chinese\概念体量\公制体量.rft");
+            Transaction mass = new Transaction(massdoc);
+            mass.Start("创建新曲线");
+            string filename = "test";
+            string foldername = Path.GetDirectoryName(doc.PathName);
+            string path = foldername + "\\" + filename + ".rft";
+            for (int j = 0; j < 100; j++)
+            {
+                filename = "排管" + j.ToString();
+                path = foldername + "\\" + filename + ".rft";
+                FamilySymbol fst = Utils.getSymbolType(doc, filename);
+                if (!File.Exists(path) && fst == null)
+                    break;
+                else continue;
+            }
+
+            HermiteSpline curve = CreateCableCurveFamily(massdoc, points) as HermiteSpline;
+            mass.Commit();
+            massdoc.SaveAs(path);
+
+            //将电缆插入项目文件中
+            doc.LoadFamily(path);
+            FamilySymbol fs = Utils.getSymbolType(doc, filename);
+            fs.Activate();
+            FamilyInstance fi2 = doc.Create.NewFamilyInstance(XYZ.Zero, fs, Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+            fi2.LookupParameter("起点").Set(curve.GetEndPoint(0).ToString());
+            fi2.LookupParameter("起点方向").Set(curve.Tangents[0].ToString());
+            fi2.LookupParameter("终点").Set(curve.GetEndPoint(1).ToString());
+            fi2.LookupParameter("终点方向").Set(curve.Tangents[curve.Tangents.Count - 1].ToString());
+            Autodesk.Revit.DB.View view = doc.ActiveView;
+            Category ca = Category.GetCategory(doc, BuiltInCategory.OST_Mass);
+            view.SetVisibility(ca, true);
+
+            //删除合并前的曲线
+            for (int i = 0; i < fi_list.Count; i++)
+                doc.Delete(fi_list[i].ElementId);
+
+            trans.Commit();
+            return Result.Succeeded;
+        }
+
+        /// <summary>
+        /// 找到族中相应的参照点并转换为xyz类型
+        /// </summary>
+        /// <param name="doc">族所在的项目文档</param>
+        /// <param name="family">族类型</param>
+        /// <returns>revit中xyz三维坐标的集合</returns>   
+        public List<XYZ> FindControlPoints(Document doc, Family family)
+        {
+            Document fdoc = doc.EditFamily(family);
+
+            //在族文件中找到参照点
+            FilteredElementCollector collector = new FilteredElementCollector(fdoc);
+            if (collector != null)
+                collector.OfClass(typeof(ReferencePoint));
+            IList<Element> list = collector.ToElements();
+
+            //将参照点转化为xyz坐标
+            List<XYZ> points = new List<XYZ>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                points.Add(((ReferencePoint)list[i]).Position);
+            }
+            return points;
+        }
+
+        public Curve CreateCableCurveFamily(Document massdoc, List<XYZ> points)
+        {
+            ReferencePointArray ptArr = new ReferencePointArray();
+            for (int i = 0; i < points.Count; i++)
+            {
+                ReferencePoint p = massdoc.FamilyCreate.NewReferencePoint(points[i]);
+                ptArr.Append(p);
+            }
+
+            CurveByPoints curve = massdoc.FamilyCreate.NewCurveByPoints(ptArr);
+
+            FamilyParameter qidian = massdoc.FamilyManager.AddParameter("起点", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            massdoc.FamilyManager.AddParameter("起点方向", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            massdoc.FamilyManager.AddParameter("终点", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            massdoc.FamilyManager.AddParameter("终点方向", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            return curve.GeometryCurve as HermiteSpline;
+        }
+
+        /// <summary>
+        /// 按是否连续对曲线集合进行排序
+        /// </summary>
+        /// <param name="linelist">曲线集合</param>
+        /// <returns>排序后的曲线集合</returns>
+        public IList<Reference> SortLine(IList<Reference> linelist)
+        {
+            IList<Reference> result = new List<Reference>();
+            result.Add(firstline);
+            Reference lastline = firstline;
+            int count = 0;
+            int originLength = linelist.Count;
+            while (linelist.Count != 0)
+            {
+                for (int i = 0; i < linelist.Count; i++)
+                {
+                    if(isAjacent(lastline,linelist[i]))
+                    {
+                        result.Add(linelist[i]);
+                        lastline = linelist[i];
+                        linelist.RemoveAt(i);
+                    }                    
+                }
+                count++;
+                if (count > originLength)
+                    break;
+            }
+            if (linelist.Count == 0)
+                return result;
+            return null;
+        }
+
+        /// <summary>
+        /// 判断两条线是否相连
+        /// </summary>
+        /// <param name="r1">第一条线</param>
+        /// <param name="r2">第二条线</param>
+        /// <returns></returns>
+        public bool isAjacent(Reference r1, Reference r2)
+        {
+            XYZ p1 = Utils.stringToXYZ(((FamilyInstance)doc.GetElement(r1)).LookupParameter("起点").AsString());
+            XYZ p2 = Utils.stringToXYZ(((FamilyInstance)doc.GetElement(r1)).LookupParameter("终点").AsString());
+            XYZ p3 = Utils.stringToXYZ(((FamilyInstance)doc.GetElement(r2)).LookupParameter("起点").AsString());
+            XYZ p4 = Utils.stringToXYZ(((FamilyInstance)doc.GetElement(r2)).LookupParameter("终点").AsString());
+            return p2.IsAlmostEqualTo(p3) || p1.IsAlmostEqualTo(p4) || p2.IsAlmostEqualTo(p4) || p1.IsAlmostEqualTo(p3);
+        }
+
+    }
+
+    [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
     public class FindPoints : IExternalCommand
     {
         Document doc;
@@ -892,7 +1065,6 @@ namespace CreateBeamWithHoles
         {
             UIApplication app = commandData.Application;
             doc = app.ActiveUIDocument.Document;
-
             //找到排管的族文件
             FilteredElementCollector collector = new FilteredElementCollector(doc);
             if (collector != null)
@@ -911,10 +1083,10 @@ namespace CreateBeamWithHoles
             //找到排管的起点方向startDir
             String coordinate;
             XYZ startDir;
-            FamilyInstance fi = Utils.findElement(doc,typeof(FamilyInstance),"排管0") as FamilyInstance;
-            coordinate=  fi.LookupParameter("起点方向").AsString();
+            FamilyInstance fi = Utils.findElement(doc, typeof(FamilyInstance), "排管0") as FamilyInstance;
+            coordinate = fi.LookupParameter("起点方向").AsString();
             TaskDialog.Show("1", coordinate);
-            startDir = Utils.stringToXYZ(coordinate);   
+            startDir = Utils.stringToXYZ(coordinate);
 
             //在族文件中找到参照点
             FilteredElementCollector collector1 = new FilteredElementCollector(f_doc);
@@ -1005,6 +1177,11 @@ namespace CreateBeamWithHoles
             return result;
         }
 
+        /// <summary>
+        /// 将坐标由string转化为xyz
+        /// </summary>
+        /// <param name="s">坐标的字符串</param>
+        /// <returns>revit中xyz坐标</returns>
         public static XYZ stringToXYZ(string s)
         {
             s = s.Substring(1, s.Length - 2);
