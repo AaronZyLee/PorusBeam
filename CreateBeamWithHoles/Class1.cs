@@ -1112,8 +1112,200 @@ namespace CreateBeamWithHoles
         }
     }
 
+    [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
+    public class ValidCurvature : IExternalCommand
+    {
+        double CURVATURE = 20 * 100;
+        Document doc;
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIApplication app = commandData.Application;
+            doc = app.ActiveUIDocument.Document;
+            Autodesk.Revit.UI.Selection.Selection sel = app.ActiveUIDocument.Selection;
+
+            Reference re = sel.PickObject(Autodesk.Revit.UI.Selection.ObjectType.Element, "请选择曲线");
+            FamilyInstance fi = doc.GetElement(re) as FamilyInstance;
+            if (fi != null)
+                TaskDialog.Show("1", isValidCurvature(fi).ToString());
+            return Result.Succeeded;
+        }
+
+        public bool isValidCurvature(FamilyInstance fi)
+        {
+            Options opt = new Options();
+            opt.ComputeReferences = false;
+            opt.View=doc.ActiveView;
+            GeometryElement geoElement = fi.get_Geometry(opt);
+            foreach (GeometryObject obj in geoElement)
+            {
+                if (obj is GeometryInstance)
+                {
+                    GeometryInstance gi = obj as GeometryInstance;
+                    GeometryElement geoElt = gi.SymbolGeometry;
+                    foreach (GeometryObject gobj in geoElt)
+                    {
+                        if (gobj is HermiteSpline)
+                        {
+                            IList<XYZ> points = ((HermiteSpline)gobj).Tessellate();
+                            for (int i = 0; i < points.Count - 2; i++)
+                            {
+                                double angle = (points[i + 1] - points[i]).AngleTo(points[i + 2] - points[i + 1]);
+                                if (angle< Math.PI / 180)
+                                    continue;
+                                Arc arc = Arc.Create(points[i], points[i + 2], points[i + 1]);
+                                if (arc.Radius < Utils.mmToFeet(CURVATURE))
+                                    return false;                              
+                            }
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+    }
+
+    [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
+    public class DivideCalbe : IExternalCommand
+    {
+        Document doc;
+        IList<XYZ> cablepoints;
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIApplication app = commandData.Application;
+            doc = app.ActiveUIDocument.Document;
+            Autodesk.Revit.UI.Selection.Selection sel = app.ActiveUIDocument.Selection;
+            Reference cableRf = sel.PickObject(Autodesk.Revit.UI.Selection.ObjectType.Element, "请选择要分割的曲线");
+            FamilyInstance cable = doc.GetElement(cableRf) as FamilyInstance;
+            if (cable == null)
+                return Result.Failed;
+            cablepoints = FindControlPoints(cable);
+            XYZ breakpoint = sel.PickPoint();
+
+            Transaction trans = new Transaction(doc);
+            trans.Start("分割电缆");
+            cutCableAtPoint(doc, cable, breakpoint);
+            doc.Delete(cable.Id);
+            trans.Commit();
+            return Result.Succeeded;
+        }
+
+        public void cutCableAtPoint(Document doc, FamilyInstance cable, XYZ breakpoint)
+        {
+            double dis = double.PositiveInfinity;
+            List<XYZ> firstLine = new List<XYZ>();
+            List<XYZ> secondLine = new List<XYZ>();
+            List<List<XYZ>> lineArr = new List<List<XYZ>>();
+            lineArr.Add(firstLine); lineArr.Add(secondLine);
+
+            for (int i = 0; i < cablepoints.Count; i++)
+            {
+                double temp = breakpoint.DistanceTo(cablepoints[i]);
+                if (temp <= dis)
+                {
+                    firstLine.Add(cablepoints[i]);
+                    dis = temp;
+                }
+                else
+                { secondLine.Add(cablepoints[i]); }
+            }
+            if (firstLine.Count != 0 && secondLine.Count != 0)
+            {
+                secondLine.Insert(0, firstLine[firstLine.Count-1]);
+                double l2 = secondLine[0].DistanceTo(secondLine[secondLine.Count - 1]);
+                for (int i = 0; i < 2; i++)
+                {
+                    //创建电缆族文件
+                    Document massdoc = doc.Application.NewFamilyDocument(@"C:\ProgramData\Autodesk\RVT 2016\Family Templates\Chinese\概念体量\公制体量.rft");
+                    Transaction mass = new Transaction(massdoc);
+                    mass.Start("创建新曲线");
+                    string filename = "test";
+                    string foldername = Path.GetDirectoryName(doc.PathName);
+                    string path = foldername + "\\" + filename + ".rft";
+                    for (int j = 0; j < 100; j++)
+                    {
+                        filename = "排管" + j.ToString();
+                        path = foldername + "\\" + filename + ".rft";
+                        FamilySymbol fst = Utils.getSymbolType(doc, filename);
+                        if (!File.Exists(path) && fst == null)
+                            break;
+                        else continue;
+                    }
+                    HermiteSpline curve = CreateCableCurveFamily(massdoc, lineArr[i]) as HermiteSpline;
+                    mass.Commit();
+                    massdoc.SaveAs(path);
+
+                    //将电缆插入项目文件中
+                    doc.LoadFamily(path);
+                    FamilySymbol fs = Utils.getSymbolType(doc, filename);
+                    fs.Activate();
+                    FamilyInstance fi2 = doc.Create.NewFamilyInstance(XYZ.Zero, fs, Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+                    fi2.LookupParameter("起点").Set(curve.GetEndPoint(0).ToString());
+                    fi2.LookupParameter("起点方向").Set(curve.Tangents[0].ToString());
+                    fi2.LookupParameter("终点").Set(curve.GetEndPoint(1).ToString());
+                    fi2.LookupParameter("终点方向").Set(curve.Tangents[curve.Tangents.Count - 1].ToString());
+                    Autodesk.Revit.DB.View view = doc.ActiveView;
+                    Category ca = Category.GetCategory(doc, BuiltInCategory.OST_Mass);
+                    view.SetVisibility(ca, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 找到族中相应的参照点并转换为xyz类型
+        /// </summary>
+        /// <param name="doc">族所在的项目文档</param>
+        /// <param name="family">族类型</param>
+        /// <returns>revit中xyz三维坐标的集合</returns>   
+        public IList<XYZ> FindControlPoints(FamilyInstance fi)
+        {
+            Options opt = new Options();
+            opt.ComputeReferences = false;
+            opt.View = doc.ActiveView;
+            GeometryElement geoElement = fi.get_Geometry(opt);
+            foreach (GeometryObject obj in geoElement)
+            {
+                if (obj is GeometryInstance)
+                {
+                    GeometryInstance gi = obj as GeometryInstance;
+                    GeometryElement geoElt = gi.SymbolGeometry;
+                    foreach (GeometryObject gobj in geoElt)
+                    {
+                        if (gobj is HermiteSpline)
+                        {
+                            IList<XYZ> points = ((HermiteSpline)gobj).Tessellate();
+                            return points;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        public Curve CreateCableCurveFamily(Document massdoc, List<XYZ> points)
+        {
+            ReferencePointArray ptArr = new ReferencePointArray();
+            for (int i = 0; i < points.Count; i++)
+            {
+                ReferencePoint p = massdoc.FamilyCreate.NewReferencePoint(points[i]);
+                ptArr.Append(p);
+            }
+
+            CurveByPoints curve = massdoc.FamilyCreate.NewCurveByPoints(ptArr);
+
+            FamilyParameter qidian = massdoc.FamilyManager.AddParameter("起点", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            massdoc.FamilyManager.AddParameter("起点方向", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            massdoc.FamilyManager.AddParameter("终点", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            massdoc.FamilyManager.AddParameter("终点方向", BuiltInParameterGroup.PG_TEXT, ParameterType.Text, true);
+            return curve.GeometryCurve as HermiteSpline;
+        }
+    }
+
     public class Utils
     {
+        public static double feetToMm(double feetVal)
+        {
+            return feetVal * 304.8;
+        }
         public static double mmToFeet(double mmVal)
         {
             return mmVal / 304.8;
